@@ -3,6 +3,7 @@ from flask import request, jsonify
 from levenshtein_distance import LevenshteinDistance
 from place import Place
 from text_context import TextContext
+from service import Service
 
 
 class TextProcessor(Resource):
@@ -18,6 +19,14 @@ class TextProcessor(Resource):
         Place("Galeria Łódzka", cities[1], "Piłsudskiego 15/23")
     ]
 
+    services = [
+        Service("strzyżenie męskie"),
+        Service("strzyżenie damskie"),
+        Service("modelowanie"),
+        Service("koloryzacja"),
+        Service("keratynowe prostowanie włosów")
+    ]
+
     lev_distance = LevenshteinDistance(cities)
 
     def post(self):
@@ -27,19 +36,20 @@ class TextProcessor(Resource):
         print('Locations: ', polyglotText.locations())
         places = self.find_places(polyglotText)
         print('Places: ', places)
+        service = self.find_service(polyglotText)
+        print('Service: ', service)
         result = {
             'people': [person._collection for person in polyglotText.people()],
             'places': [p.__dict__ for p in places],
-            'service': '',
-            'message': 'hello'
+            'service': service.name if service else 'N/A'
         }
         return jsonify(result)
 
     def find_places(self, text_context):
         location_names = [location[0] for location in text_context.locations()]
         city = self.find_city(location_names)
-        places = [p for p in self.places if p.city == city['city']]
-        to_remove = [city['location']] + [y for x in text_context.people() for y in x]
+        places = [p for p in self.places if city is None or p.city == city['city']]
+        to_remove = [city['location']] if city is not None else [] + [y for x in text_context.people() for y in x]
         words_to_check = text_context.words_without(to_remove)
         return self.filter_places(places, words_to_check)
 
@@ -59,6 +69,12 @@ class TextProcessor(Resource):
         place_matches.sort(key=lambda p: p['match'])
         return [p['place'] for p in place_matches if p['match'] < 0.75]
 
-
-
+    def find_service(self, text_context):
+        to_remove = [y for x in text_context.locations() for y in x] + [y for x in text_context.people() for y in x]
+        tags = text_context.words_without(to_remove)
+        matches = [{'service': s, 'match': s.matches(tags)} for s in self.services]
+        if len(matches) == 0:
+            return None
+        matches.sort(key=lambda m: m['match'])
+        return matches[0]['service']
 
